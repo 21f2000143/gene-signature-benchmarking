@@ -1,0 +1,21 @@
+name: python
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11.15
+  - jupyter
+  - nbconvert
+  - pip
+  - numpy
+  - pandas<3
+  - scipy
+  - matplotlib
+  - seaborn
+  - pillow
+  - socksio
+  - pysocks
+  - requests
+  - python=3.11
+  - pip
+  - pip:
+    - pypdfium2==5.9.0

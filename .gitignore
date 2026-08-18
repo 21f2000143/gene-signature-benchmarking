@@ -1,0 +1,15 @@
+results/
+harmonised/
+figs/
+logs/
+media/
+bench/
+parts/
+__pycache__/
+*.json
+*.txt
+*.csv
+shard_out
+setup
+survaudit
+*.png
