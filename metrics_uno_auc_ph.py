@@ -316,10 +316,13 @@ def main():
         y_tr, y_te = surv_y(ttr, etr), surv_y(tte, ete)
 
         # --- tau: largest event time in held-out cohort, capped by train censoring support
+        # cap uses a 0.05 floor on the censoring-KM survival estimate, not 1e-8: IPCW
+        # weights are 1/G(t), so a near-zero-but-nonzero G(t) still yields exploding
+        # per-subject weights and an unstable integrated Brier score near that boundary.
         cens = CensoringDistributionEstimator().fit(y_tr)
         max_ev_te = float(tte[ete == 1].max())
         gx, gy = cens.unique_time_, cens.prob_
-        pos = gx[gy > 1e-8]
+        pos = gx[gy > 0.05]
         cap = float(pos.max()) if len(pos) else float(ttr.max())
         tau_candidates = [min(max_ev_te, cap * (1 - 1e-9))]
         for q in (0.99, 0.95, 0.90):

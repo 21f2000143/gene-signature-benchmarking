@@ -3,7 +3,7 @@ import pandas as pd
 from scipy.stats import chi2 as chi2dist
 
 # Load loco_risk_scores.csv
-rs = pd.read_csv("loco_risk_scores.csv")
+rs = pd.read_csv("results/loco_risk_scores.csv")
 
 def stratified_logrank(time, event, group, strata):
     time = np.asarray(time, float)

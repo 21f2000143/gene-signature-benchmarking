@@ -25,7 +25,7 @@ except NameError:
 
     def apply_figure_style(sizes=(8, 7, 6)):
         mpl.rcParams.update({"font.family": "sans-serif", "font.size": sizes[0],
-                             "savefig.dpi": 400})
+                             "savefig.dpi": 600})
 
 RES = "results"
 pf = pd.read_csv(os.path.join(RES, "participant_flow.csv"))
@@ -105,7 +105,7 @@ def draw_flow(path="figs/fig_participant_flow.png"):
             "($-$3.1 to $+$41.4 months), which used a different follow-up definition.",
             ha="center", va="bottom", fontsize=5.5, color=META_GREY, style="italic",
             linespacing=1.5)
-    fig.savefig(path, dpi=400, facecolor="white")
+    fig.savefig(path, dpi=1000, facecolor="white")
     return fig, ax
 
 

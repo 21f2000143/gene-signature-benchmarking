@@ -62,7 +62,6 @@ UNIV_EXPR = UNIV[ok]
 print("universe_expressed", len(UNIV_EXPR), flush=True)
 qdf = pd.concat(qrows, axis=1)
 qdf["passes_expression_filter"] = ok
-os.path.join("setup", fn)
 os.makedirs("setup", exist_ok=True)
 qdf.to_csv(os.path.join("setup", "gene_universe_filter.csv"), index=False)
 

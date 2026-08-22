@@ -13,3 +13,6 @@ shard_out
 setup
 survaudit
 *.png
+paper/
+*.zip
+cmpb_revised

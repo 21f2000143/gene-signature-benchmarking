@@ -248,8 +248,10 @@ the concordance of the published Novel-5 panel on the same fold; the
 concordance of Anchor-4, the four-gene selection scaffold, evaluated alone; and
 the number of published-panel genes the fold-specific search recovered. Mean
 nested concordance %.4f (SD %.4f) versus %.4f for the
-published panel evaluated on the same folds, giving a selection optimism of
-%+.4f. No gene was selected in all six folds; %d distinct genes were selected
+published panel evaluated on the same folds, a published-minus-nested gap of
+%+.4f; because the nested procedure differs from the original search in both
+training-cohort composition and candidate universe, this gap is not a pure,
+isolated estimate of fold-level selection leakage. No gene was selected in all six folds; %d distinct genes were selected
 across folds from %s candidates, with a mean overlap of %.2f of five genes.}
 \label{tab:nested}
 \footnotesize
@@ -343,6 +345,7 @@ def table5():
     n20 = js("null_20k_summary.json")
     ms = rd("metrics_summary.csv").set_index("gene_set")
 
+    gs_raw = js("gene_sets.json")
     sm = sm.set_index("observed_panel")
     rows = []
     for g in GS:
@@ -355,16 +358,21 @@ def table5():
             s = sg.loc[g]
             pair = "%d/6 & %d/6 & %.5f & %.2f" % (
                 int(s.n_pos), int(s.n_ci_favour), s.sign_p, s.q_bh)
-        rows.append("%s & %d & %.3f & %.3f & %.1f & %s\\\\" % (
-            GSLBL[g].replace(" \\textbf{(this study)}", ""), int(r.panel_size),
+        k_nominal = int(gs_raw[g]["n"])
+        k_harm = int(r.panel_size)
+        knom_str = "%d" % k_nominal if k_nominal != k_harm else "---"
+        rows.append("%s & %d & %s & %.3f & %.3f & %.1f & %s\\\\" % (
+            GSLBL[g].replace(" \\textbf{(this study)}", ""), k_harm, knom_str,
             r.observed_cindex, r.null_mean, r.observed_percentile, pair))
     body = r"""\begin{table*}[htbp]
 \caption{\csentence{Size-matched random-panel nulls and the paired cohort-level
 comparison.}
 Left: each gene set is compared against a null of random panels drawn with
-\emph{its own} gene count, because concordance rises with set size under random
-draws; the percentile is the observed value's position in that own-size null. To
-keep 24,500 draws tractable, both the null draws and the ``Observed $c$'' column
+\emph{its own harmonised} gene count ($k$ used), because concordance rises with
+set size under random draws; the percentile is the observed value's position
+in that own-size null. The $k$ nominal column gives the published size where it
+differs from $k$ used (genes lost to platform/cross-cohort harmonisation). To
+keep the 4,000 size-matched draws (500 per unique gene count, 8 unique counts among the 9 gene sets) tractable, both the null draws and the ``Observed $c$'' column
 here are the mean over only the four largest cohorts (TCGA, METABRIC, SCAN-B$_1$,
 SCAN-B$_2$), \emph{not} the six-cohort primary mean of Table~\ref{tab:loco}; this
 is why Novel-5's value here (%.3f) differs from its Table~\ref{tab:loco} mean
@@ -387,11 +395,11 @@ that design rather than a measured $p$-value.}
 \label{tab:nulls}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
-\begin{tabular}{lrrrrrrrr}
+\begin{tabular}{lrrrrrrrrr}
 \hline
- & \multicolumn{4}{c}{Own-size random-panel null (4-cohort scale)} & \multicolumn{4}{c}{Paired vs Novel-5 (6-cohort scale)}\\
-\cline{2-5}\cline{6-9}
-Gene set & $k$ genes & Observed $c$ (4-coh.) & Null mean & Pctile & Higher & CI excl.\ 0 & Sign $p$ & BH $q$\\
+ & \multicolumn{5}{c}{Own-size random-panel null (4-cohort scale)} & \multicolumn{4}{c}{Paired vs Novel-5 (6-cohort scale)}\\
+\cline{2-6}\cline{7-10}
+Gene set & $k$ used & $k$ nominal & Observed $c$ (4-coh.) & Null mean & Pctile & Higher & CI excl.\ 0 & Sign $p$ & BH $q$\\
 \hline
 """ % (sm.loc["Novel5", "observed_cindex"], ms.loc["Novel5", "harrell_mean"],
        rf["sign_test_min_two_sided_p"], rf["sign_test_min_two_sided_p"],
@@ -472,7 +480,7 @@ Held-out cohort & HR (T3 vs T1) & 95\%% CI & Log-rank $p$ & PH $p$\\
        phs["stratified_continuous_hr_per_sd"]) + "\n".join(rows) + r"""
 \hline
 \multicolumn{5}{l}{}\\[-1.5mm]
-\multicolumn{5}{l}{\textit{Cohort-stratified HR (high vs low, median split) by follow-up window}}\\
+\multicolumn{5}{l}{\textit{Cohort-stratified HR (high vs low risk tertile) by follow-up window}}\\
 \hline
 Window (months) & $n$ at risk & Events & HR & 95\% CI\\
 \hline
@@ -571,8 +579,13 @@ model, which differs from the canonical value by up to %.4f for the three
 largest gene sets (Buffa, MammaPrint, PAM50) --- a residual solver-convergence
 gap between the two fitting runs rather than a modelling difference, and small
 enough not to change any ranking in this table. Bold marks each gene set's best
-learner. The last two columns give the per-cell best-of-four maximum and its
-excess over the pre-specified learner: selecting the learner per cell inflates
+learner. ``Best of four'' is \emph{not} the row-wise maximum of the four
+learner columns shown: it is the per-\emph{cohort} best learner, taken before
+averaging across the six held-out cohorts, so different cohorts can favour
+different learners for the same gene set and the resulting mean can exceed
+every one of the four column means in that row. This is what the last two
+columns give: the per-cohort best-of-four maximum, then
+its excess over the pre-specified learner: selecting the learner per cell inflates
 concordance by
 %.3f on average (up to %.3f), which is the optimism a best-of-four report would
 carry. Elastic-net Cox and gradient boosting reproduce the ridge ordering of the
@@ -602,6 +615,78 @@ Gene set & """ + " & ".join(MLBL[m] for m in mods) + \
     write("tab7_learners.tex", body)
 
 
+def table7b():
+    """Full nine-gene-set matched-max_features RSF control (Section sec:results,
+    peer-review addition): is the RSF reordering in table7() a feature-count
+    artifact of the default max_features='sqrt' rule? sklearn truncates
+    (max(1, int(sqrt(n_features)))), so GGI's true default at 58 genes is 7, not
+    8; the control fixes max_features to a constant 8 (one more than GGI's own
+    default, applied identically to every gene set) rather than reporting only
+    Novel-5's mean and a partial ranking in prose.
+    """
+    g = rd("learner_grid_full.csv")
+    g = g[g.gene_set != "Clinical"]  # rank among the nine gene sets only, matching
+                                      # "Novel-5 falls to sixth of nine" everywhere else
+    rsf_default = g[g.learner == "RSF"].groupby("gene_set").cindex.mean()
+    k_default = g[g.learner == "RSF"].groupby("gene_set").n_genes_used.mean()
+    ctrl = rd("rsf_mtry_control.csv")
+    rsf_fixed = ctrl.groupby("gene_set").cindex.mean()
+    k_fixed = ctrl.groupby("gene_set").n_genes_used.mean()
+
+    assert len(rsf_default) == 9 and len(rsf_fixed) == 9, \
+        "expected exactly 9 gene sets ranked, got %d default / %d fixed" % (
+            len(rsf_default), len(rsf_fixed))
+    rank_default = rsf_default.rank(ascending=False)
+    rank_fixed = rsf_fixed.rank(ascending=False)
+    assert rank_default["Novel5"] == 6, \
+        "Novel-5's default-RSF rank should be 6th of 9 (matches prose elsewhere); got %d" % rank_default["Novel5"]
+    from scipy.stats import spearmanr
+    common = [g_ for g_ in GS if g_ in rank_default.index and g_ in rank_fixed.index]
+    rho, pval = spearmanr(rank_default.reindex(common), rank_fixed.reindex(common))
+
+    rows = []
+    for g_ in GS:
+        if g_ not in rsf_default.index or g_ not in rsf_fixed.index:
+            continue
+        mf_default = max(1, int(np.sqrt(k_default[g_])))
+        mf_fixed = int(min(8, k_fixed[g_]))
+        rows.append(
+            "%s & %d & %d (default) / %d (fixed) & %.3f & %.3f & %d & %d\\\\"
+            % (GSLBL[g_].replace(" \\textbf{(this study)}", ""), int(k_default[g_]),
+               mf_default, mf_fixed, rsf_default[g_], rsf_fixed[g_],
+               int(rank_default[g_]), int(rank_fixed[g_])))
+
+    body = r"""\begin{table*}[htbp]
+\caption{\csentence{Random survival forest, default versus matched-candidate-count.}
+Full nine-gene-set result behind the matched-\texttt{max\_features} control
+described in Section~\ref{sec:results}: does the RSF reordering in
+Table~\ref{tab:learners} survive when every gene set is offered the same
+absolute number of candidate features per split, rather than a number scaled
+to its own size? \texttt{max\_features} column: the default
+\texttt{max\_features='sqrt'} value actually used for that gene set under
+scikit-learn's truncating rule ($\max(1,\lfloor\sqrt{k}\rfloor)$, not
+rounding -- GGI's true default at $k=58$ is 7, not 8), versus the fixed
+constant (8, capped at the gene set's own size for the three sets with fewer
+than 8 genes) used in the control. Novel-5's rank is unchanged (6th of 9)
+under the fixed-candidate-count control, and the two rankings correlate at
+Spearman $\rho$ = %.3f ($p$ = %.3f); a feature-count artifact of the default
+rule is therefore not the explanation for the reordering in
+Table~\ref{tab:learners}.}
+\label{tab:rsf_mtry}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrlrrrr}
+\hline
+Gene set & $k$ used & max\_features & RSF default $c$ & RSF fixed $c$ & Rank (default) & Rank (fixed)\\
+\hline
+""" % (rho, pval) + "\n".join(rows) + r"""
+\hline
+\end{tabular}
+\end{table*}
+"""
+    write("tab7b_rsf_mtry.tex", body)
+
+
 # ---------------------------------------------------------------- Table 8
 def table8():
     """Selection-naive cohorts and the permutation calibration."""
@@ -625,7 +710,7 @@ is trained only on the other never-involved cohorts; for GSE20711 and GSE58812
 this four-cohort training set is one cohort smaller than Table~\ref{tab:loco}'s
 five-cohort LOCO training pool (which additionally includes whichever of these
 two is not the held-out cohort), so the two tables' values for the same held-out
-cohort differ slightly ($\le$0.001 here) by design, not by error. The two OS cohorts
+cohort differ slightly (up to 0.0032, largest for the weaker, noisier Anchor-4 arm on GSE58812) by design, not by error. The two OS cohorts
 carry %d events in total, so this is a low-resolution check rather than a second
 validation. Two genes of the five are absent from the Affymetrix DMFS/DFS
 platforms, which is why the panel is evaluated there on the two genes available.
@@ -647,10 +732,10 @@ transfer out of sample.}
 Cohort & Endpoint & Panel & Genes & $n$ & Events & $c$ (trained on & $c$ (trained on\\
  & & & avail. & & & selection cohorts) & naive peers)\\
 \hline
-""" % (sns["total_events_naive_os"], ps["n_replicates"], ps["null_inner_mean"],
-       ps["search_optimism_on_pure_noise"], ps["observed_inner_search_score"],
-       ps["n_replicates"], ps["p_exact_inner"], ps["n_replicates"],
-       ps["null_heldout_mean"]) + "\n".join(rows) + r"""
+""" % (sns["total_events_naive_os"], ps["n_replicates"], ps["perm_inner_loco_mean"],
+       ps["search_optimism_under_null"], ps["observed_inner_loco_c"],
+       ps["n_replicates"], ps["p_perm_inner"], ps["n_replicates"],
+       ps["perm_heldout_real_mean"]) + "\n".join(rows) + r"""
 \hline
 \end{tabular}
 \end{table*}
@@ -677,13 +762,29 @@ def table10():
     tcga = lr[(lr.cohort == "TCGA") & (lr.signature == "Novel5")
               & (lr.model_compared.str.contains("clinical"))].iloc[0]
 
+    # BH q must be computed from the SAME p-values displayed in this table (the
+    # df=5 block-LRT p-values in `inc`), not from lr_tests_with_q.csv, which
+    # carries an unrelated single-covariate (df=1) sensitivity test for these
+    # same three cohorts -- mixing the two previously produced q < p, which is
+    # mathematically impossible for a BH-adjusted value and was caught by a
+    # reviewer.
     order3 = ["METABRIC", "SCANB_GSE96058", "SCANB_GSE202203"]
+    p3 = inc.loc[order3, "lr_p_value"].to_numpy()
+    o = np.argsort(p3)
+    raw_q = p3[o] * 3 / np.arange(1, 4)
+    q3 = np.minimum.accumulate(raw_q[::-1])[::-1]
+    q_by_cohort = dict(zip(np.array(order3)[o], np.minimum(q3, 1.0)))
+    for c in order3:
+        assert q_by_cohort[c] >= inc.loc[c, "lr_p_value"] - 1e-15, \
+            "BH q must be >= raw p: %s q=%.3e p=%.3e" % (
+                c, q_by_cohort[c], inc.loc[c, "lr_p_value"])
+
     rows = []
     for c in order3:
         r = inc.loc[c]
         rows.append(
-            "%s & 5 & %.2f & %.2e & %.2e & %+.3f (%+.3f, %+.3f) & %+.3f & %+.3f\\\\"
-            % (HEAD[c], r.lr_statistic, r.lr_p_value, r.q_bh,
+            "%s & 5 & %.2f & %.2e & %.2e & %+.3f (%+.3f, %+.3f) & %+.4f & %+.4f\\\\"
+            % (HEAD[c], r.lr_statistic, r.lr_p_value, q_by_cohort[c],
                r.delta_c_mean, r.delta_c_ci_lo, r.delta_c_ci_hi,
                r.net_benefit_gain_at_pt05, r.net_benefit_gain_at_pt10))
     rows.append(
@@ -701,9 +802,10 @@ likelihood-ratio test adding the five Novel-5 gene z-scores as a block to the
 clinical model (df = 5), the Benjamini--Hochberg $q$ across these three tests,
 the honest 5-fold cross-validated change in concordance with a 95\%
 percentile bootstrap interval, and the decision-curve net benefit gained at
-5\% and 10\% five-year risk thresholds. For TCGA, whose audited covariate set
-is thinner (age and nodal status only): a separate single-covariate (df = 1)
-in-sample likelihood-ratio test of the composite Novel-5 risk score, not part
+5\% and 10\% five-year risk thresholds. For TCGA, tested here under a
+deliberately restricted two-covariate (age, nodal status) subset of its four
+audited covariates as a simpler sensitivity check: a separate single-term
+(df = 1) in-sample likelihood-ratio test adding the composite Novel-5 risk score, not part
 of the three-cohort correction family and not paired with a cross-validated
 $\Delta c$ or net benefit. The panel does not beat clinicopathology
 (Table~\ref{tab:clinical}) but adds significantly to it in every cohort
@@ -721,6 +823,71 @@ Held-out & df & $\chi^2$ & $p$ & BH $q$ & $\Delta c$ (95\% CI) & NB@5\% & NB@10\
 \end{table*}
 """
     write("tab10_incremental.tex", body)
+
+
+def table10b():
+    """Incremental value of Novel-5 over clinicopathology, common-covariate
+    specification (Section sec:incremental) -- added to close a peer-review
+    gap: table10() tests only the richer per-cohort-available clinical model,
+    under which clinicopathology already beats the panel outright. This
+    repeats the identical test (in-sample nested LRT, 5-fold cross-validated
+    delta-c, decision-curve net benefit) under the common-covariate
+    specification of Table 4 (node_pos, er_pos only), the one under which the
+    panel actually leads the clinical model (0.661 vs 0.603), so it is the
+    specification under which incremental value most needs checking.
+    """
+    inc = rd("incremental_lr_dca_c1_common.csv").set_index("cohort")
+    order3 = ["METABRIC", "SCANB_GSE96058", "SCANB_GSE202203"]
+    p3 = inc.loc[order3, "lr_p_value"].to_numpy()
+    o = np.argsort(p3)
+    raw_q = p3[o] * 3 / np.arange(1, 4)
+    q3 = np.minimum.accumulate(raw_q[::-1])[::-1]
+    q_by_cohort = dict(zip(np.array(order3)[o], np.minimum(q3, 1.0)))
+    for c in order3:
+        assert q_by_cohort[c] >= inc.loc[c, "lr_p_value"] - 1e-15, \
+            "BH q must be >= raw p: %s q=%.3e p=%.3e" % (
+                c, q_by_cohort[c], inc.loc[c, "lr_p_value"])
+
+    rows = []
+    for c in order3:
+        r = inc.loc[c]
+        rows.append(
+            "%s & 5 & %.2f & %.2e & %.2e & %+.3f (%+.3f, %+.3f) & %+.4f & %+.4f\\\\"
+            % (HEAD[c], r.lr_statistic, r.lr_p_value, q_by_cohort[c],
+               r.delta_c_mean, r.delta_c_ci_lo, r.delta_c_ci_hi,
+               r.net_benefit_gain_at_pt05, r.net_benefit_gain_at_pt10))
+
+    body = r"""\begin{table*}[htbp]
+\caption{\csentence{Incremental value of Novel-5 over clinicopathology, common-covariate specification.}
+The same test as Table~\ref{tab:incremental} (in-sample nested likelihood-ratio
+test adding the five Novel-5 gene z-scores as a block, df = 5; the
+Benjamini--Hochberg $q$ across these three tests; the honest 5-fold
+cross-validated change in concordance with a 95\% percentile bootstrap
+interval; and the decision-curve net benefit at 5\% and 10\% five-year risk
+thresholds), but against the common-covariate clinical model (nodal and ER
+status only, Table~\ref{tab:clinical}) rather than the per-cohort-available
+one -- the specification under which the panel already leads the clinical
+model outright (0.661 vs.\ 0.603), so this is the more stringent test of
+whether the effect in Table~\ref{tab:incremental} is an artefact of testing
+only against the richer clinical model. It is not: the likelihood-ratio
+improvement is larger, not smaller, under the sparser baseline in all three
+cohorts, and the cross-validated $\Delta c$ gain is correspondingly larger
+(up to $+$0.10, against at most $+$0.02 in Table~\ref{tab:incremental}), consistent with a weaker clinical
+model leaving more room for the same five genes to add discriminative
+information.}
+\label{tab:incremental_common}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrrrrr}
+\hline
+Held-out & df & $\chi^2$ & $p$ & BH $q$ & $\Delta c$ (95\% CI) & NB@5\% & NB@10\%\\
+\hline
+""" + "\n".join(rows) + r"""
+\hline
+\end{tabular}
+\end{table*}
+"""
+    write("tab10b_incremental_common.tex", body)
 
 
 # ---------------------------------------------------------------- Table 11
@@ -796,8 +963,10 @@ if __name__ == "__main__":
     table5()
     table6()
     table7()
+    table7b()
     table8()
     table10()
+    table10b()
     table11_uno()
     # Cross-table check. Tables 2 and 4 both print a clinical c-index per
     # cohort; they once drew them from two different refits and disagreed by up

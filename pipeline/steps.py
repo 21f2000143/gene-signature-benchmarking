@@ -60,13 +60,37 @@ STEPS: list[Step] = [
     # Stage 1 - independent core analyses (order-free amongst themselves,
     # kept in README order for readability).
     # ---------------------------------------------------------------
-#     These are the files which are not present in the step
-# 'loco_paired_noel5_vs_comparators'
-# 'km_stratification'
-# 'ph_tests '
-# 'clin_harmonise'
-# 'ibc_notebook'
-# 'nested_core'
+# Scripts deliberately NOT registered as steps (checked 2026-08-22):
+#   loco_paired_noel5_vs_comparators.py -- now registered, see stage 3 below.
+#   clin_harmonise.py, nested_core.py    -- shared library modules, not standalone scripts.
+#   ibc_notebook                         -- not a script in this checkout.
+#   ph_tests.csv                         -- written by metrics_uno_auc_ph.py (registered);
+#                                          there is no separate ph_tests.py to run.
+#   loco_os.py, loco_secondary.py, cross_endpoint_transfer.py -- near-identical copies
+#                                          of loco_os_pooled.py's monolithic sweep; only
+#                                          loco_os_pooled is registered (see stage 2).
+#   null_random_panels.py, observed_panels.py -- redundant subsets of null_summary.py's
+#                                          computation; only null_summary is registered.
+#   time_dependent_auc.py                -- duplicates metrics_uno_auc_ph.py's tAUC
+#                                          computation under a different, unregistered
+#                                          output filename (results/time_dependent_auc.csv,
+#                                          vs the registered time_dependent_auc_revised.csv).
+#                                          That plain-named CSV in results/ is a stale,
+#                                          pre-supplied file with no current generator.
+#   km_stratification.py                 -- BROKEN against current data: expects a
+#                                          `risk_group_tertile` column in
+#                                          results/loco_risk_scores.csv that the current
+#                                          hr_pooled.py output does not have.
+#   timevarying_hr_windows.py            -- runs without raising, but every hazard ratio
+#                                          comes out NaN (the per-window Cox fit silently
+#                                          fails); needs investigation before it is wired in.
+#   permutation_search_pooled.py         -- reads permutation_search_s0..s3.csv, sharded
+#                                          outputs of some earlier multi-seed batch run
+#                                          that are not present anywhere in this checkout.
+#   calibration_quintiles.py             -- `import host` / `host.artifact_path(...)` is
+#                                          an interactive-session helper, not a real
+#                                          package; not portable outside whatever tool
+#                                          originally generated setup/calibration_quintiles.csv.
     Step("run_nested_selection", 2, "onetime", "run_nested_selection.py",
          outputs=["nested_selection_folds.csv", "nested_selection_traces.csv",
                    "nested_selection_consensus.csv", "nested_selection_stability.csv",
@@ -84,10 +108,17 @@ STEPS: list[Step] = [
     Step("metrics_uno_auc_ph", 2, "onetime", "metrics_uno_auc_ph.py",
          outputs=["metrics_harrell_uno.csv", "time_dependent_auc_revised.csv",
                    "metrics_summary.csv", "loco_risk_novel5.csv", "ph_tests.csv",
-                   "run_notes.json"]),
+                   "run_notes.json"],
+         extra_copy=["."],
+         note="extra_copy mirrors metrics_harrell_uno.csv back to repo root too, "
+              "since uno_event_weighted.py (stage 3) reads it as a bare relative path"),
     Step("hr_pooled", 2, "onetime", "hr_pooled.py",
          outputs=["hr_per_cohort.csv", "loco_risk_scores.csv", "hr_pooled_methods.csv",
-                   "heterogeneity.json", "hr_loco_sensitivity.csv"]),
+                   "heterogeneity.json", "hr_loco_sensitivity.csv", "resolution_floor.json"],
+         note="resolution_floor.json was previously omitted from this Step's outputs, "
+              "so it was never mirrored to results/ or cached -- make_fig_null_resolution.py "
+              "and make_fig_paired_forest.py read a stale, pre-supplied copy instead of a "
+              "fresh one; added here so it flows through the normal pipeline"),
     Step("run_comparator_penalty", 2, "onetime", "run_comparator_penalty.py",
          outputs=["comparator_coverage_penalty.csv", "comparator_alpha_sweep.csv",
                    "comparator_within_cohort.csv", "comparator_penalty_summary.json"]),
@@ -137,6 +168,54 @@ STEPS: list[Step] = [
          note="unifies metrics_uno_auc_ph.py vs run_clinical_arm.py; run after both"),
     Step("run_incremental_value_c1", 2, "onetime", "run_incremental_value_c1.py",
          outputs=["incremental_lr_dca_c1.csv", "incremental_dca_curves_c1.csv"]),
+    Step("run_incremental_value_c1_common", 2, "onetime", "run_incremental_value_c1_common.py",
+         outputs=["incremental_lr_dca_c1_common.csv", "incremental_dca_curves_c1_common.csv"],
+         note="common-covariate-specification counterpart to run_incremental_value_c1; "
+              "was never registered, so its two CSVs were never (re)produced by main.py"),
+
+    Step("table1_cohorts", 2, "onetime", "table1_cohorts.py",
+         outputs=["setup/table1_cohorts.csv"], extra_copy=["."],
+         note="extra_copy mirrors it to repo root too, since uno_event_weighted.py "
+              "(stage 3) reads it as a bare relative path"),
+    Step("core_hours_estimate", 2, "onetime", "core_hours_estimate.py",
+         outputs=["core_hours_estimate.csv"]),
+    Step("likelihood_ratio_tests", 2, "onetime", "likelihood_ratio_tests.py",
+         outputs=["setup/likelihood_ratio_tests.csv"], extra_copy=["."],
+         note="extra_copy mirrors it to repo root too, since lr_tests_with_q.py "
+              "(stage 3) reads it as a bare relative path"),
+    Step("solver_validation", 2, "onetime", "solver_validation.py",
+         outputs=["setup/solver_validation.csv"],
+         note="reads from ~/.claude-science-scratch/bc_bench (a copy of the harmonised "
+              "parquet files outside this repo's own harmonised/ convention); confirmed "
+              "present and working in this checkout, but this path is environment-specific "
+              "and may not exist elsewhere"),
+    Step("rsf_mtry_control", 2, "onetime", "rsf_mtry_control.py",
+         outputs=["results/rsf_mtry_control.csv", "results/rsf_mtry_control_summary.json"],
+         note="writes directly under results/ already; expensive (ProcessPoolExecutor "
+              "grid over RSF hyperparameters) -- was never registered, so it never reran, "
+              "and the checked-in CSV was from a prior manual invocation"),
+    Step("loco_os_pooled", 2, "onetime", "loco_os_pooled.py",
+         outputs=["setup/loco_os.csv", "setup/loco_secondary.csv",
+                   "setup/cross_endpoint_transfer.csv", "setup/loco_os_pooled.csv"],
+         note="loco_os.py, loco_secondary.py and cross_endpoint_transfer.py are "
+              "near-byte-identical copies of the same monolithic LOCO/transfer sweep "
+              "(Parallel n_jobs=54, expensive); this is the superset variant (also "
+              "computes the pooled summary) and is registered in their place so the "
+              "same computation does not run three times over"),
+    Step("null_summary", 2, "onetime", "null_summary.py",
+         outputs=["setup/gene_universe_filter.csv", "setup/observed_panels.csv",
+                   "setup/null_random_panels.csv", "setup/null_summary.csv"],
+         note="null_random_panels.py and observed_panels.py are redundant subsets of "
+              "this script's computation and are registered in their place; fixed a "
+              "`NameError: name 'fn' is not defined` (a stray dead statement) that made "
+              "this script crash before it could write any output. Expensive by default "
+              "(N_SIZE_MATCHED=500 random draws per gene set per cohort)"),
+    Step("gene_clinical_loco", 2, "onetime", "run_gene_clinical_loco.py",
+         outputs=["results/gene_clinical_arm_loco.csv", "results/gene_clinical_arm_summary.json"],
+         note="combined gene+clinical LOCO arm for every gene set (Table "
+              "gene_clinical in cmpb_revised/manuscript.tex); self-contained, loads "
+              "cohorts and harmonises clinical covariates itself, same audited rule as "
+              "reconcile_clinical_arm.py"),
 
     # ---------------------------------------------------------------
     # Stage 2 - analyses that depend on stage-2 outputs.
@@ -164,6 +243,29 @@ STEPS: list[Step] = [
          note="needs comparator_coverage_penalty.csv (run_comparator_penalty)"),
     Step("run_fixedform_scores", 3, "onetime", "run_fixedform_scores.py",
          outputs=["comparator_fixedform.csv", "comparator_fixedform_summary.json"]),
+    Step("best_model_per_cell", 3, "onetime", "best_model_per_cell.py",
+         outputs=["best_model_per_cell.csv"],
+         note="needs results/within_cohort_folds.csv (benchmark_within)"),
+    Step("incremental_value", 3, "onetime", "incremental_value.py",
+         outputs=["incremental_value.csv"],
+         note="needs results/within_cohort_folds.csv (benchmark_within); the "
+              "gene+clinical-vs-clinical-vs-gene-only within-cohort comparison, "
+              "across every gene set"),
+    Step("loco_secondary_pooled", 3, "onetime", "loco_secondary_pooled.py",
+         outputs=["setup/loco_secondary_pooled.csv"],
+         note="needs setup/loco_secondary.csv (loco_os_pooled); fixed a hardcoded "
+              "input path (D='hpc/', a directory that does not exist in this "
+              "checkout) to D='setup/', where loco_os_pooled.py actually writes it"),
+    Step("loco_paired_novel5_vs_comparators", 3, "onetime",
+         "loco_paired_noel5_vs_comparators.py",
+         outputs=["setup/loco_paired_novel5_vs_comparators.csv"],
+         note="script filename keeps the repo's own 'noel5' typo; expensive "
+              "(LOCO refit per comparator pair) -- allow a long timeout"),
+    Step("uno_event_weighted", 3, "onetime", "uno_event_weighted.py",
+         outputs=["uno_event_weighted.csv"],
+         note="needs table1_cohorts.csv and metrics_harrell_uno.csv at the repo root "
+              "(bare relative paths); both are mirrored there via extra_copy on the "
+              "table1_cohorts and metrics_uno_auc_ph steps"),
 
     # ---------------------------------------------------------------
     # Stage 3 - figures. Already read/write results/ and media/ directly.

@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 
-D = "hpc/"
+D = "setup/"
 sec = pd.read_csv(D+"loco_secondary.csv")
 
 ssum = sec.groupby(["gene_set","model"]).apply(lambda g: pd.Series({

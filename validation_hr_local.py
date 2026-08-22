@@ -142,6 +142,6 @@ def main(scores_csv, out_json):
 
 if __name__ == "__main__":
     os.makedirs("setup", exist_ok=True)
-    scores_csv = sys.argv[1] if len(sys.argv) > 1 else "setup/sloco_risk_scores.csv"
+    scores_csv = sys.argv[1] if len(sys.argv) > 1 else "setup/loco_risk_scores.csv"
     out_json = sys.argv[2] if len(sys.argv) > 2 else "setup/validation_hr_local.json"
     main(scores_csv, out_json)

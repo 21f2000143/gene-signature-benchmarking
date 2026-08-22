@@ -26,38 +26,38 @@
 # python3 make_caveats_table.py
 # python3 run_fixedform_scores.py
 
-# python3 make_fig_pipeline.py
-# python3 make_fig_participant_flow.py
-# python3 make_fig_cindex_dual.py
-# python3 make_fig_auc_calibration.py
-# python3 make_fig_nested_selection.py
-# python3 make_fig_null_resolution.py
-# python3 make_fig_paired_forest.py
-# python3 make_fig_km_hazard.py
+python3 make_fig_pipeline.py
+python3 make_fig_participant_flow.py
+python3 make_fig_cindex_dual.py
+python3 make_fig_auc_calibration.py
+python3 make_fig_nested_selection.py
+python3 make_fig_null_resolution.py
+python3 make_fig_paired_forest.py
+python3 make_fig_km_hazard.py
 
-python table1_cohorts.py
-python loco_os.py
-python loco_os_pooled.py
-python loco_secondary.py
-python loco_secondary_pooled.py
-python cross_endpoint_transfer.py
-python loco_paired_novel5_vs_comparators.py
-python null_random_panels.py
-python null_summary.py
-python observed_panels.py
-python paired_bootstrap.py
-python permutation_search_pooled.py
-python likelihood_ratio_tests.py
-python lr_tests_with_q.py
-python time_dependent_auc.py
-python uno_event_weighted.py
-python calibration_quintiles.py
-python solver_validation.py
-python validation_hr_local.py
-python core_hours_estimate.py
-python incremental_value.py
-python best_model_per_cell.py
-python learner_grid_full.py
-python learner_grid_summary.py
-python learner_grid_ranking.py
-python loco_risk_scores.py
+# python table1_cohorts.py
+# python loco_os.py
+# python loco_os_pooled.py
+# python loco_secondary.py
+# python loco_secondary_pooled.py
+# python cross_endpoint_transfer.py
+# python loco_paired_novel5_vs_comparators.py
+# python null_random_panels.py
+# python null_summary.py
+# python observed_panels.py
+# python paired_bootstrap.py
+# python permutation_search_pooled.py
+# python likelihood_ratio_tests.py
+# python lr_tests_with_q.py
+# python time_dependent_auc.py
+# python uno_event_weighted.py
+# python calibration_quintiles.py
+# python solver_validation.py
+# python validation_hr_local.py
+# python core_hours_estimate.py
+# python incremental_value.py
+# python best_model_per_cell.py
+# python learner_grid_full.py
+# python learner_grid_summary.py
+# python learner_grid_ranking.py
+# python loco_risk_scores.py

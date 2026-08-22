@@ -37,7 +37,7 @@ except NameError:
     def apply_figure_style(sizes=(8, 7, 6)):
         mpl.rcParams.update({"font.family": "sans-serif", "font.size": sizes[0],
                              "axes.spines.top": False, "axes.spines.right": False,
-                             "savefig.dpi": 400})
+                             "savefig.dpi": 600})
 
     def panel_letter(ax, letter, case="lower"):
         ax.text(-0.16, 1.07, letter, transform=ax.transAxes, fontsize=9,
@@ -188,7 +188,7 @@ def draw(rs, kmt, ph, ps, phs, tv, path="figs/fig_km_hazard.png"):
     axa.set_xticks([0, 36, 60, 120, 180])
     axa.set_xlabel("Months from diagnosis")
     axa.set_ylabel("Overall survival")
-    axa.set_title("Pooled risk tertiles separate\n(cohort-stratified log-rank $p$ = %.0e)"
+    axa.set_title("High-risk patients fare clearly worse ($p$ = %.0e)"
                   % prow.logrank_p_stratified)
     axa.legend(frameon=False, fontsize=5.2, loc="lower left", handlelength=1.2,
                borderpad=0.1, labelspacing=0.22)
@@ -207,11 +207,10 @@ def draw(rs, kmt, ph, ps, phs, tv, path="figs/fig_km_hazard.png"):
     logticks(axb, [1, 2, 4, 8])
     axb.set_ylim(-0.75, len(tv) - 0.2)
     axb.set_xlabel("Hazard ratio, high vs low risk tertile")
-    axb.set_title("The effect decays with follow-up: HR %.1f in the\n"
-                  "first 3 years, %.2f beyond 10"
+    axb.set_title("The extra danger fades with time: HR %.1f → %.2f"
                   % (tv.hr.iloc[0], tv.hr.iloc[-1]))
     axb.text(phs["stratified_hr"] * 1.09, -0.66,
-             "single pooled HR %.2f" % phs["stratified_hr"], fontsize=5.0,
+             "one pooled HR would say %.2f" % phs["stratified_hr"], fontsize=5.0,
              color=FOC, ha="left", va="bottom")
 
     axc = fig.add_subplot(gs[1, 0])
@@ -232,7 +231,7 @@ def draw(rs, kmt, ph, ps, phs, tv, path="figs/fig_km_hazard.png"):
     axc.set_ylim(-0.6, len(kk) - 0.4)
     axc.set_xlabel("Hazard ratio, high vs low risk tertile")
     nv = int(ph[~ph.cohort.eq("POOLED")].ph_violated_05.sum())
-    axc.set_title("Proportional hazards is violated in %d of 6\ncohorts (red)" % nv)
+    axc.set_title("The risk gap shifts over time in %d of 6 cohorts (red)" % nv)
 
     axd = fig.add_subplot(gs[1, 1])
     spec3 = ps[ps.label.str.startswith("POOLED")].copy()
@@ -250,12 +249,12 @@ def draw(rs, kmt, ph, ps, phs, tv, path="figs/fig_km_hazard.png"):
     axd.set_xlim(1.35, 2.38)
     axd.set_ylim(-0.55, len(spec3) - 0.45)
     axd.set_xlabel("Pooled hazard ratio (95% CI), median split")
-    axd.set_title("Stratifying by cohort moves the pooled HR\nby only %.1f%%"
+    axd.set_title("Cohort barely moves the pooled result (%.1f%% shift)"
                   % phs["pct_change_hr_stratifying"])
 
     for ax, L in [(axa, "a"), (axb, "b"), (axc, "c"), (axd, "d")]:
         panel_letter(ax, L, case="lower")
-    fig.savefig(path, dpi=400, facecolor="white")
+    fig.savefig(path, dpi=1000, facecolor="white")
     return fig
 
 
@@ -294,6 +293,8 @@ def verify(fig):
 if __name__ == "__main__":
     os.makedirs("figs", exist_ok=True)
     rs = pd.read_csv(os.path.join(RES, "loco_risk_scores.csv"))
+    rs = rs.rename(columns={"group": "risk_group_tertile"})
+    rs["risk_group_tertile"] = rs["risk_group_tertile"].replace({"mid": "intermediate"})
     kmt = pd.read_csv(os.path.join(RES, "km_stratification.csv"))
     ph = pd.read_csv(os.path.join(RES, "ph_tests.csv"))
     ps = pd.read_csv(os.path.join(RES, "pooled_hr_stratified.csv"))
@@ -304,7 +305,7 @@ if __name__ == "__main__":
     # elsewhere uses the cohort-stratified fit). Recompute the 3-group tertile log-rank
     # test stratified by cohort (Mantel-Haenszel generalisation) and use that instead.
     chi2_strat, df_strat, p_strat = stratified_logrank(
-        rs.time_months, rs.event, rs.risk_roup_tertile, rs.cohort)
+        rs.time_months, rs.event, rs.risk_group_tertile, rs.cohort)
     kmt.loc[kmt.cohort.eq("POOLED"), "logrank_chi2_stratified"] = chi2_strat
     kmt.loc[kmt.cohort.eq("POOLED"), "logrank_p_stratified"] = p_strat
     kmt.to_csv(os.path.join(RES, "km_stratification.csv"), index=False)

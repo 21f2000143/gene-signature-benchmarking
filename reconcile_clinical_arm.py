@@ -89,15 +89,20 @@ def harmonise_clin(coh, s):
 
     out["node_pos"] = np.nan
     if "node" in col:
-        v = col["node"]
-        sv = v.astype(str).str.upper().str.strip()
-        if sv.str.contains("N[0-9]", regex=True).any():
-            out["node_pos"] = (_num(sv.str.extract(r"N([0-9])")[0]) > 0).astype(float)
-        elif sv.str.contains("POSITIVE|NEGATIVE", regex=True).any():
-            out["node_pos"] = sv.str.contains("NODEPOSITIVE|POSITIVE").astype(float)
+        raw = col["node"]
+        rs = raw.astype(str).str.strip()
+        num = _num(raw)
+        np_ = pd.Series(np.nan, index=s.index)
+        if num.notna().sum() > 0.5 * len(s):
+            np_ = (num > 0).astype(float).where(num.notna())
         else:
-            n_ = _num(v)
-            out["node_pos"] = (n_ > 0).astype(float).where(n_.notna())
+            neg = rs.str.upper().str.match(r"^N0") | rs.isin(
+                ["NodeNegative", "Node negative", "negative", "0"])
+            pos = rs.isin(["NodePositive", "SubMicroMet", "1to3", "4toX"]) | \
+                rs.str.upper().str.match(r"^N[1-3]")
+            np_ = pd.Series(np.where(pos, 1.0, np.where(neg, 0.0, np.nan)),
+                            index=s.index)
+        out["node_pos"] = np_
 
     out["size_gt20"] = np.nan
     if "size" in col:

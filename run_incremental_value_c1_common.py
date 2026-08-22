@@ -1,32 +1,22 @@
 
 """
-run_incremental_value_c1.py -- reviewer item C1: incremental value of Novel-5 over
-the clinical model, tested where clinical covariates are dense enough to support it
-(METABRIC, SCAN-B GSE96058, SCAN-B GSE202203 -- 5 or 6 covariates, 1,891/2,099
-overall-survival events between them).
+run_incremental_value_c1_common.py -- common-covariate-specification counterpart to
+run_incremental_value_c1.py, added to close a gap flagged in peer review: the
+original incremental-value test (LR test + honest cross-validated delta-c +
+decision-curve analysis) was run only under the richer per-cohort-available
+clinical specification, under which clinicopathology already beats the panel
+outright (Table 2/4). The specification under which the panel actually leads
+(0.661 vs 0.603, Table 4's common-covariate row) is the one under which a reader
+most needs to know whether the panel adds value beyond the (weaker) clinical
+baseline, and that test had not been run. This script is run_incremental_value_c1.py
+verbatim except that the clinical covariate set is fixed to the two covariates
+common to five of the six cohorts (node_pos, er_pos -- Table 4's
+clinical_common_5_excl_GSE58812 specification) instead of being selected per
+cohort from the richer six-covariate set. Same three cohorts, same design
+(in-sample nested LRT, 5-fold cross-validated delta-c, decision-curve analysis
+at 60 months), same alpha, same seeds.
 
-For each of the three cohorts, WITHIN that cohort's own data (in-sample nested
-comparison, the standard design for an incremental-value LR test):
-  1. Fit ridge Cox (alpha=1, near-unpenalized -- enough covariates/events per cohort
-     that a small ridge keeps the Newton solve stable without materially shrinking
-     the likelihood surface) for:
-       reduced: clinical covariates only
-       full:    clinical covariates + Novel-5 (z-scored)
-  2. Nested likelihood-ratio test: LR = 2*(ll_full - ll_reduced), df = 5 (Novel-5
-     genes added), p from the chi-square survival function.
-  3. Delta-c: honest (not in-sample) via 5-fold stratified-by-event cross-validation
-     within the cohort; report the mean paired difference (full - reduced) and a
-     bootstrap CI over the paired per-fold differences.
-  4. Decision-curve analysis at a 5-year (60-month) horizon: convert each model's
-     linear predictor to a predicted 5-year event probability via the Breslow
-     baseline cumulative hazard estimated on each training fold, and compute net
-     benefit at threshold probabilities pt in [0.01, 0.50] pooling predictions
-     across the same 5 folds used for delta-c (so DCA and delta-c share exactly the
-     same out-of-sample predictions).
-
-Writes: incremental_lr_dca_c1.csv (one row per cohort: LR stat, df, p, delta-c mean
-        + CI, net benefit summary), incremental_dca_curves_c1.csv (full net-benefit
-        curves for plotting).
+Writes: incremental_lr_dca_c1_common.csv, incremental_dca_curves_c1_common.csv
 """
 import os, sys, json
 import numpy as np
@@ -39,7 +29,7 @@ from nested_core import fit_ridge_cox, cindex, sort_desc
 
 NOVEL5 = ["FLT3", "CLIC6", "SUSD3", "ZIC2", "P4HA2"]
 TARGET_COHORTS = ["METABRIC", "SCANB_GSE96058", "SCANB_GSE202203"]
-HARM = ["age_years", "grade3", "node_pos", "size_gt20", "er_pos", "pr_pos"]
+HARM = ["node_pos", "er_pos"]  # common-covariate specification (Table 4)
 ALPHA_NEAR_MLE = 1.0
 HORIZON_MONTHS = 60.0
 PT_GRID = np.round(np.arange(0.01, 0.51, 0.01), 4)
@@ -357,7 +347,7 @@ for coh in TARGET_COHORTS:
            rows[-1]["net_benefit_gain_at_pt05"], rows[-1]["net_benefit_gain_at_pt10"]))
 
 out = pd.DataFrame(rows)
-out.to_csv("incremental_lr_dca_c1.csv", index=False)
+out.to_csv("incremental_lr_dca_c1_common.csv", index=False)
 curves = pd.DataFrame(curve_rows)
-curves.to_csv("incremental_dca_curves_c1.csv", index=False)
-log("\nWrote incremental_lr_dca_c1.csv and incremental_dca_curves_c1.csv")
+curves.to_csv("incremental_dca_curves_c1_common.csv", index=False)
+log("\nWrote incremental_lr_dca_c1_common.csv and incremental_dca_curves_c1_common.csv")

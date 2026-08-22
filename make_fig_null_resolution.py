@@ -35,7 +35,7 @@ except NameError:
     def apply_figure_style(sizes=(8, 7, 6)):
         mpl.rcParams.update({"font.family": "sans-serif", "font.size": sizes[0],
                              "axes.spines.top": False, "axes.spines.right": False,
-                             "savefig.dpi": 400})
+                             "savefig.dpi": 600})
 
     def panel_letter(ax, letter, case="lower"):
         ax.text(-0.16, 1.07, letter, transform=ax.transAxes, fontsize=9,
@@ -66,6 +66,43 @@ Q999 = n20["null_quantiles"]["0.999"]
 OBS = n20["observed_novel5_mean_loco_c"]
 
 
+def _shift_label_px(ax, text, dy_px):
+    x, y = text.get_position()
+    xd, yd = ax.transData.transform((x, y))
+    x2, y2 = ax.transData.inverted().transform((xd, yd + dy_px))
+    text.set_position((x, y2))
+
+
+def declutter_labels(fig, ax, texts, max_iter=200, pad_px=1.0):
+    """Nudge overlapping labels apart vertically in rendered pixel space,
+    using actual bounding boxes, until no pair overlaps."""
+    if not texts:
+        return
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for _ in range(max_iter):
+        boxes = [t.get_window_extent(renderer) for t in texts]
+        moved = False
+        for i in range(len(texts)):
+            for j in range(i + 1, len(texts)):
+                bi, bj = boxes[i], boxes[j]
+                if not bi.overlaps(bj):
+                    continue
+                moved = True
+                overlap = min(bi.y1, bj.y1) - max(bi.y0, bj.y0)
+                push = overlap / 2.0 + pad_px
+                if bi.y0 <= bj.y0:
+                    lo, hi = texts[i], texts[j]
+                else:
+                    lo, hi = texts[j], texts[i]
+                _shift_label_px(ax, lo, -push)
+                _shift_label_px(ax, hi, push)
+        if not moved:
+            break
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+
+
 def draw(path="figs/fig_null_resolution.png"):
     apply_figure_style(sizes=(8, 7, 6))
     mpl.rcParams.update({"axes.titlesize": 7.0, "axes.labelsize": 6.8,
@@ -75,7 +112,7 @@ def draw(path="figs/fig_null_resolution.png"):
                           top=0.905, bottom=0.115)
 
     axa = fig.add_subplot(gs[0, 0])
-    n, _, _ = axa.hist(nd.mean_loco_c, bins=70, color="#C9D4E0", edgecolor="none")
+    n, _, _ = axa.hist(nd.mean_loco_c, bins=70, color="#C9D4E0", edgecolor="none", zorder=3)
     ymax = n.max()
     axa.axvline(OBS, color=FOC, lw=1.3)
     axa.axvline(Q999, color="#666666", lw=0.8, ls=(0, (3, 2)))
@@ -96,7 +133,9 @@ def draw(path="figs/fig_null_resolution.png"):
     yy = np.arange(len(sm))
     cols = [FOC if p in ("Novel5", "Novel5_plus_Anchor4")
             else (ANCH if p == "Anchor4" else NEUT) for p in sm.observed_panel]
-    axb.barh(yy, sm.observed_percentile, color=cols, height=0.66)
+    axb.barh(yy, sm.observed_percentile, color=cols, height=0.66, zorder=3)
+    for yi, v, c in zip(yy, sm.observed_percentile, cols):
+        axb.text(v + 1.5, yi, "%.1f" % v, fontsize=5.2, color=c, ha="left", va="center")
     axb.axvline(95, color="#666666", lw=0.8, ls=(0, (3, 2)))
     axb.set_yticks(yy)
     axb.set_yticklabels([LBL.get(p, p) for p in sm.observed_panel], fontsize=5.6)
@@ -111,7 +150,7 @@ def draw(path="figs/fig_null_resolution.png"):
 
     axc = fig.add_subplot(gs[1, 0])
     ks = sorted(ST)
-    axc.plot(ks, [ST[k] for k in ks], "-o", ms=4.0, lw=1.0, color=NEUT)
+    axc.plot(ks, [ST[k] for k in ks], "-o", ms=4.0, lw=1.0, color=NEUT, zorder=3)
     axc.axhline(0.05, color=FOC, lw=0.8, ls=(0, (3, 2)))
     axc.scatter([0, 6], [ST[0], ST[6]], s=46, facecolor="white", edgecolor=FOC,
                 zorder=4, linewidth=1.1)
@@ -119,6 +158,12 @@ def draw(path="figs/fig_null_resolution.png"):
     axc.set_xlabel("Cohorts favouring one signature (of 6)")
     axc.set_ylabel("Exact two-sided $p$")
     axc.set_ylim(-0.06, 1.16)
+    panel_c_labels = []
+    for k in ks:
+        v = ST[k]
+        panel_c_labels.append(axc.text(k, v - 0.03, "%.3g" % v, fontsize=4.8,
+                                       color=NEUT, ha="center", va="top"))
+    declutter_labels(fig, axc, panel_c_labels)
     axc.text(3.0, 0.085, "0.05", fontsize=5.4, color=FOC, ha="center", va="bottom")
     axc.text(3.0, 1.12, "best attainable $p$ = %.5f, at either extreme" % ST[6],
              fontsize=5.2, color="#555555", ha="center", va="top")
@@ -132,6 +177,9 @@ def draw(path="figs/fig_null_resolution.png"):
     axd.axhspan(n20["null_quantiles"]["0.5"], Q999, color="#E4EAF1", zorder=0)
     axd.axhline(n20["null_mean"], color="#888888", lw=0.8, ls=(0, (3, 2)), zorder=1)
     axd.scatter(xs, [pf[o] for o in oo], s=30, color=FOC, zorder=3)
+    for xi, o in zip(xs, oo):
+        axd.text(xi, pf[o] + 0.006, "%.3f" % pf[o], fontsize=5.0, color=FOC,
+                 ha="center", va="bottom")
     axd.set_xticks(xs)
     axd.set_xticklabels([SHORT[o] for o in oo], fontsize=5.4)
     axd.set_ylabel("Harrell's C")
@@ -146,7 +194,7 @@ def draw(path="figs/fig_null_resolution.png"):
 
     for ax, L in [(axa, "a"), (axb, "b"), (axc, "c"), (axd, "d")]:
         panel_letter(ax, L, case="lower")
-    fig.savefig(path, dpi=400, facecolor="white")
+    fig.savefig(path, dpi=1000, facecolor="white")
     return fig
 
 

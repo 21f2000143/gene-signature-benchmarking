@@ -25,7 +25,7 @@ except NameError:
 
     def apply_figure_style(sizes=(8, 7, 6)):
         mpl.rcParams.update({"font.family": "sans-serif", "font.size": sizes[0],
-                             "savefig.dpi": 400})
+                             "savefig.dpi": 600})
 
 apply_figure_style(sizes=(8, 7, 6))
 
@@ -62,23 +62,22 @@ def draw_pipeline(path="figs/fig_pipeline.png"):
         "Harrell's C and Uno's IPCW C.  No gene, hyperparameter\n"
         "or threshold is chosen using the held-out cohort.", STAGE, STAGE_E, fs=5.9)
     box(97, 30, 80, 29, "6  Selection-bias control",
-        "Nested re-selection: the four-step search\nre-run inside every outer fold\n"
+        "Nested re-selection: the five-step search\nre-run inside every outer fold\n"
         "Permutation calibration: 91 replicates,\nlabels shuffled within cohort\n"
         "Selection-naive cohort subset", STAGE, STAGE_E, fs=5.9)
     box(3, 6, 55, 17, "7  Inference",
-        "Cohort-stratified Cox\nrandom-effects pooling ($I^2$)\nPH tests, paired bootstrap", OUT, OUT_E)
+        "Cohort-stratified Cox\npooled HR, 3 specifications\nPH tests, paired bootstrap", OUT, OUT_E)
     box(64, 6, 55, 17, "8  Sensitivity",
         "Full four-learner grid\ngene-dropout subsets\ncoefficient-free scoring", OUT, OUT_E)
     box(125, 6, 52, 17, "9  Reporting",
-        "TRIPOD flow accounting\nversioned scripts\nfixed seeds, pinned env", OUT, OUT_E)
-    for x0,x1 in [(43,77.5),(89,77.5),(135,77.5)]: pass
+        "TRIPOD flow accounting\nversioned scripts\nfixed seeds, recorded env", OUT, OUT_E)
     for x0,x1 in [(43,49),(89,95),(135,141)]: arrow(x0, 77.5, x1, 77.5)
     arrow(23, 66, 23, 59); arrow(159, 66, 159, 59)
     arrow(91, 44.5, 97, 44.5)
-    arrow(30, 30, 30, 23); arrow(91.5, 30, 91.5, 23); arrow(137, 30, 137, 23)
+    arrow(30, 30, 30, 23); arrow(91.5, 30, 91.5, 23); arrow(151, 30, 151, 23)
     ax.text(90, 1.8, "Every stage is a versioned script; all inputs are public.",
             ha="center", va="bottom", fontsize=5.8, color=META_GREY, style="italic")
-    fig.savefig(path, dpi=400, facecolor="white")
+    fig.savefig(path, dpi=1000, facecolor="white")
     return fig, ax
 
 

@@ -20,7 +20,7 @@ Inputs (results/): loco_paired_novel5_vs_comparators.csv, resolution_floor.json
 Outputs: figs/fig_paired_forest.png, results/paired_sign_test_by_comparator.csv
 """
 import json
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, false_discovery_control
 import os
 import numpy as np
 import pandas as pd
@@ -35,7 +35,7 @@ except NameError:
     def apply_figure_style(sizes=(8, 7, 6)):
         mpl.rcParams.update({"font.family": "sans-serif", "font.size": sizes[0],
                              "axes.spines.top": False, "axes.spines.right": False,
-                             "savefig.dpi": 400})
+                             "savefig.dpi": 600})
 
     def panel_letter(ax, letter, case="lower"):
         ax.text(-0.16, 1.07, letter, transform=ax.transAxes, fontsize=9,
@@ -52,6 +52,64 @@ FOC, NEUT, GREY = "#B3312C", "#2B5C8A", "#8A8A8A"
 RES = "results"
 
 
+def _shift_label_px(ax, text, dy_px):
+    x, y = text.get_position()
+    xd, yd = ax.transData.transform((x, y))
+    x2, y2 = ax.transData.inverted().transform((xd, yd + dy_px))
+    text.set_position((x, y2))
+
+
+def declutter_labels(fig, ax, texts, max_iter=200, pad_px=1.0):
+    """Nudge overlapping labels apart vertically in rendered pixel space,
+    using actual bounding boxes, until no pair overlaps."""
+    if not texts:
+        return
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    for _ in range(max_iter):
+        boxes = [t.get_window_extent(renderer) for t in texts]
+        moved = False
+        for i in range(len(texts)):
+            for j in range(i + 1, len(texts)):
+                bi, bj = boxes[i], boxes[j]
+                if not bi.overlaps(bj):
+                    continue
+                moved = True
+                overlap = min(bi.y1, bj.y1) - max(bi.y0, bj.y0)
+                push = overlap / 2.0 + pad_px
+                if bi.y0 <= bj.y0:
+                    lo, hi = texts[i], texts[j]
+                else:
+                    lo, hi = texts[j], texts[i]
+                _shift_label_px(ax, lo, -push)
+                _shift_label_px(ax, hi, push)
+        if not moved:
+            break
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+
+
+def stack_up(fig, ax, texts, pad_px=1.0):
+    """Stack labels that start at a shared, already-safe baseline strictly
+    upward past one another -- never down -- so they cannot be pushed back
+    onto whatever the baseline was chosen to clear (e.g. a boxplot patch)."""
+    if not texts:
+        return
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    order = sorted(range(len(texts)), key=lambda k: texts[k].get_position()[0])
+    placed = []
+    for idx in order:
+        t = texts[idx]
+        while True:
+            box = t.get_window_extent(renderer)
+            blocker = next((pb for pb in placed if box.overlaps(pb)), None)
+            if blocker is None:
+                break
+            _shift_label_px(ax, t, (blocker.y1 - box.y0) + pad_px)
+        placed.append(t.get_window_extent(renderer))
+
+
 def sign_table(lp, ST):
     """Per-comparator sign agreement, CI-exclusion count, and exact sign-test p."""
     sg = lp.assign(pos=lp.delta_cindex > 0).groupby("comparator").agg(
@@ -61,6 +119,9 @@ def sign_table(lp, ST):
     sg["sign_p"] = [ST[int(k)] for k in sg.n_pos]
     sg["n_ci_favour"] = [int((lp[lp.comparator.eq(c)].favours == "Novel5").sum())
                          for c in sg.comparator]
+    # Benjamini-Hochberg over the sign-test p across these comparators (Novel5 itself
+    # is not a comparator, so this is exactly the 8-comparator family Table 5 reports).
+    sg["q_bh"] = false_discovery_control(sg.sign_p.values, method="bh")
     return sg.sort_values("mean_delta", ascending=False).reset_index(drop=True)
 
 
@@ -68,38 +129,55 @@ def draw(lp, sg, floor, path="figs/fig_paired_forest.png"):
     apply_figure_style(sizes=(8, 7, 6))
     mpl.rcParams.update({"axes.titlesize": 7.0, "axes.labelsize": 6.8,
                          "xtick.labelsize": 6.0, "ytick.labelsize": 6.0})
-    fig = plt.figure(figsize=(180 / 25.4, 112 / 25.4))
+    fig = plt.figure(figsize=(230.8 / 25.4, 154.8 / 25.4))
     gs = fig.add_gridspec(2, 2, height_ratios=[1.45, 1], hspace=0.52, wspace=0.30,
                           left=0.155, right=0.975, top=0.925, bottom=0.095)
 
-    # a: per-cohort deltas, grouped by comparator
+    # a: per-cohort deltas, grouped by comparator. A box summarises the spread
+    # across the 6 cohorts; individual cohort point estimates are overlaid as
+    # coloured dots. (The original per-cohort bootstrap-CI whiskers -- 48 of
+    # them in one strip -- were unreadable; CI-exclusion counts are already
+    # reported per comparator in panel b.)
     axa = fig.add_subplot(gs[0, :])
     comps = sg.comparator.tolist()[::-1]
-    off = np.linspace(-0.30, 0.30, len(ORDER))
+    step = 2.0  # extra row spacing (vs 1.0) makes room to stack per-point labels
+    axa.set_xlim(-0.075, 0.245)
+    axa.set_ylim(-0.62 * step, (len(comps) - 1) * step + 0.62 * step)
+    jit = np.linspace(-0.20, 0.20, len(ORDER))
     for i, cmp_ in enumerate(comps):
-        d = lp[lp.comparator.eq(cmp_)]
+        yi = i * step
+        d = lp[lp.comparator.eq(cmp_)].set_index("held_out_cohort")
+        vals = [d.loc[coh, "delta_cindex"] for coh in ORDER if coh in d.index]
+        axa.boxplot(vals, positions=[yi], vert=False, widths=0.5, showfliers=False,
+                   whis=(0, 100), patch_artist=True,
+                   boxprops=dict(facecolor="#EDEDED", edgecolor="#999999", lw=0.7),
+                   medianprops=dict(color="#555555", lw=1.0),
+                   whiskerprops=dict(color="#999999", lw=0.7),
+                   capprops=dict(color="#999999", lw=0.7), zorder=2)
+        row_labels = []
         for j, coh in enumerate(ORDER):
-            row = d[d.held_out_cohort.eq(coh)]
-            if not len(row):
+            if coh not in d.index:
                 continue
-            r0 = row.iloc[0]
-            y = i + off[j]
-            axa.plot([r0.delta_ci_lo, r0.delta_ci_hi], [y, y], color=CC[coh], lw=0.8)
-            axa.scatter(r0.delta_cindex, y, s=11, color=CC[coh], zorder=3)
-        if i:
-            axa.axhline(i - 0.5, color="#DDDDDD", lw=0.5, zorder=0)
+            val = d.loc[coh, "delta_cindex"]
+            y = yi + jit[j]
+            axa.scatter(val, y, s=13, color=CC[coh], zorder=4,
+                       edgecolor="white", linewidth=0.3)
+            # anchored clear of the box (half-height 0.25) so the collision
+            # resolver only needs to stack labels upward, never dodge the box
+            row_labels.append(
+                axa.text(val, yi + 0.29, "%.3f" % val, fontsize=3.2, color=CC[coh],
+                        ha="center", va="bottom", zorder=5))
+        stack_up(fig, axa, row_labels)
     axa.axvline(0.0, color="k", lw=0.8, ls=(0, (4, 3)))
-    axa.set_yticks(np.arange(len(comps)))
+    axa.set_xticks([-0.05, 0.0, 0.05, 0.10, 0.15, 0.20])
+    axa.set_yticks(np.arange(len(comps)) * step)
     axa.set_yticklabels([LBL.get(c, c) for c in comps], fontsize=5.8)
-    axa.set_ylim(-0.62, len(comps) - 0.38)
     axa.set_xlabel("$\\Delta$ Harrell's C, Novel5 $-$ comparator "
-                   "(leave-one-cohort-out, 95% bootstrap CI)")
-    nloss = int((lp.delta_cindex < 0).sum())
+                   "(leave-one-cohort-out; box = spread across the 6 cohorts)")
     nsig_comp = int((lp.favours == "comparator").sum())
-    axa.set_title("No comparator is significantly better in any cohort (%d of %d), though "
-                  "%d point\nestimates favour the comparator and most intervals include zero"
-                  % (nsig_comp, len(lp), nloss))
-    hs = [plt.Line2D([], [], color=CC[c], marker="o", ms=3.0, lw=0.8,
+    axa.set_title("No comparator beats Novel5 significantly (%d of %d)"
+                  % (nsig_comp, len(lp)))
+    hs = [plt.Line2D([], [], color=CC[c], marker="o", ms=3.0, lw=0,
                      label=c.replace("SCANB_", "SCAN-B ").replace("_", " "))
           for c in ORDER]
     axa.legend(handles=hs, frameon=False, fontsize=5.2, ncol=3, loc="lower right",
@@ -108,11 +186,24 @@ def draw(lp, sg, floor, path="figs/fig_paired_forest.png"):
     # b: sign agreement vs CI exclusion
     axb = fig.add_subplot(gs[1, 0])
     yy = np.arange(len(sg))[::-1]
-    axb.barh(yy, sg.n_pos, height=0.62, color="#C9D4E0", label="sign agreement")
-    axb.barh(yy, sg.n_ci_favour, height=0.30, color=NEUT, label="bootstrap CI excludes 0")
+    axb.barh(yy, sg.n_pos, height=0.62, color="#C9D4E0", label="sign agreement", zorder=3)
+    axb.barh(yy, sg.n_ci_favour, height=0.30, color=NEUT, label="bootstrap CI excludes 0",
+             zorder=3)
+    axb.set_xlim(0, 10.4)
+    axb.set_ylim(-0.65, len(sg) - 0.35)
+    # both labels sit past the LONGER (sign-agreement) bar, since n_ci_favour
+    # never exceeds n_pos -- anchoring each at its own bar end would put the
+    # CI-favour label underneath the sign-agreement bar's rectangle
+    panel_b_labels = []
+    for y, n_pos, n_ci in zip(yy, sg.n_pos, sg.n_ci_favour):
+        x = n_pos + 0.15
+        panel_b_labels.append(axb.text(x, y + 0.16, "%d" % n_pos,
+                                       fontsize=5.0, color="#556B87", ha="left", va="center"))
+        panel_b_labels.append(axb.text(x, y - 0.16, "%d" % n_ci,
+                                       fontsize=5.0, color=NEUT, ha="left", va="center"))
+    declutter_labels(fig, axb, panel_b_labels)
     axb.set_yticks(yy)
     axb.set_yticklabels([LBL.get(c, c) for c in sg.comparator], fontsize=5.4)
-    axb.set_xlim(0, 10.4)
     axb.set_xticks(range(7))
     axb.set_xlabel("Cohorts of 6 favouring Novel5")
     nfloor = int((sg.n_pos == 6).sum())
@@ -122,19 +213,22 @@ def draw(lp, sg, floor, path="figs/fig_paired_forest.png"):
     axb.legend(frameon=False, fontsize=5.2, loc="center right", handlelength=1.1,
                borderpad=0.1, labelspacing=0.35)
 
-    # c: delta against comparator size, ordered by gene count (no free-floating labels,
-    # which cannot be placed collision-free at these x positions)
+    # c: delta against comparator size, ordered by gene count
     axc = fig.add_subplot(gs[1, 1])
     sc = sg.sort_values("k_genes", ascending=False).reset_index(drop=True)
     yc = np.arange(len(sc))[::-1]
+    axc.set_ylim(-0.6, len(sc) - 0.4)
+    axc.set_xlim(-0.095, 0.245)
+    panel_c_labels = []
     for y, (_, r0) in zip(yc, sc.iterrows()):
         axc.plot([r0.min_delta, r0.max_delta], [y, y], color=GREY, lw=0.7, zorder=1)
         axc.scatter(r0.mean_delta, y, s=20, color=NEUT, zorder=3)
+        panel_c_labels.append(axc.text(r0.mean_delta, y + 0.20, "%.3f" % r0.mean_delta,
+                                       fontsize=5.0, color=NEUT, ha="center", va="bottom"))
+    declutter_labels(fig, axc, panel_c_labels)
     axc.axvline(0.0, color="k", lw=0.8, ls=(0, (4, 3)))
     axc.set_yticks(yc)
     axc.set_yticklabels([LBL.get(c, c) for c in sc.comparator], fontsize=5.4)
-    axc.set_ylim(-0.6, len(sc) - 0.4)
-    axc.set_xlim(-0.095, 0.245)
     axc.set_xlabel("$\\Delta$ Harrell's C (mean, and range across cohorts)")
     # The margin does NOT decrease monotonically with comparator size: over the
     # eight comparators shown here Spearman(size, mean delta) = -0.40, p = 0.33,
@@ -152,7 +246,7 @@ def draw(lp, sg, floor, path="figs/fig_paired_forest.png"):
 
     for ax, L in [(axa, "a"), (axb, "b"), (axc, "c")]:
         panel_letter(ax, L, case="lower")
-    fig.savefig(path, dpi=400, facecolor="white")
+    fig.savefig(path, dpi=1000, facecolor="white")
     return fig
 
 
@@ -200,6 +294,12 @@ def verify(fig):
                     tp.append((t.get_text()[:24], "marker"))
             for ln in ax.lines:
                 if not ln.get_visible():
+                    continue
+                # axhline/axvline reference lines use a blended transform (one
+                # axis in axes-fraction coordinates) -- transforming their raw
+                # xydata through transData alone (valid only for plain data-
+                # space lines) produces nonsense pixel coordinates, so skip them.
+                if ln.get_transform() is not ax.transData:
                     continue
                 xy = ln.get_xydata()
                 if len(xy) == 0:

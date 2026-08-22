@@ -1,0 +1,1 @@
+xargs -d '\n' rm -f -- < common_files.txt

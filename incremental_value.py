@@ -3,7 +3,7 @@ import numpy as np
 
 pd.set_option("display.width", 250)
 
-folds = pd.read_csv("within_cohort_folds.csv")
+folds = pd.read_csv("results/within_cohort_folds.csv")
 
 rng = np.random.default_rng(42)
 def boot_ci(s):
